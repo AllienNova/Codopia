@@ -32,7 +32,7 @@ from typing import Optional, Type
 from pydantic import BaseModel, Field
 from crewai.tools import BaseTool
 
-from backend.agents.events import EventBus, AgentEvent, EventType
+from agents.events import EventBus, AgentEvent, EventType
 
 
 # Dangerous imports/functions that are blocked in the sandbox

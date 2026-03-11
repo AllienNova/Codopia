@@ -34,7 +34,7 @@ import time
 from flask import Blueprint, request, jsonify
 from flask_socketio import emit
 
-from backend.agents.events import EventBus, AgentEvent, EventType
+from agents.events import EventBus, AgentEvent, EventType
 
 
 # Blueprint definition
@@ -73,7 +73,7 @@ def init_agent_system(socketio=None):
         _event_bus.on_event(socket_listener)
 
     # Import and create the agent system
-    from backend.agents.crew import CodopiaAgentSystem
+    from agents.crew import CodopiaAgentSystem
     _agent_system = CodopiaAgentSystem(event_bus=_event_bus)
 
     print("[Codopia Agents] Multi-agent system initialized")

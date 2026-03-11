@@ -8,6 +8,15 @@ import asyncio
 import json
 from gemini_live_sparkle_fixed import professor_sparkle, initialize_sparkle_session, get_sparkle_response
 
+# --- Multi-Agent System Integration ---
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from agents.api_routes import agent_bp, init_agent_system, register_socketio_handlers
+
+# A/B Test Control — environment variables
+USE_MULTI_AGENT_SYSTEM = os.environ.get('USE_MULTI_AGENT_SYSTEM', 'true').lower() == 'true'
+AGENT_SYSTEM_ROLLOUT_PERCENTAGE = int(os.environ.get('AGENT_SYSTEM_ROLLOUT_PERCENTAGE', '100'))
+
 # Load environment variables
 from dotenv import load_dotenv
 load_dotenv()
@@ -30,6 +39,44 @@ port = int(os.environ.get('PORT', 5000))
 
 # In-memory user storage (replace with database in production)
 users = []
+
+# Signup HTML template
+signup_html = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - Codopia</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-purple-100 via-pink-50 to-blue-100">
+    <div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+        <div class="max-w-md w-full space-y-8">
+            <div>
+                <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
+                    Create your account
+                </h2>
+            </div>
+            <form class="mt-8 space-y-6" method="POST">
+                <div class="space-y-4">
+                    <input name="parent_name" type="text" required class="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm" placeholder="Parent Name">
+                    <input name="email" type="email" required class="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm" placeholder="Email address">
+                    <input name="password" type="password" required class="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm" placeholder="Password">
+                    <input name="child_name" type="text" required class="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm" placeholder="Child's Name">
+                    <input name="child_age" type="number" min="5" max="18" required class="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm" placeholder="Child's Age">
+                </div>
+                <div>
+                    <button type="submit" class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+                        Create Account
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
+'''
 
 @app.route('/')
 def home():
@@ -251,29 +298,54 @@ def handle_init_sparkle():
 
 @socketio.on('sparkle_message')
 def handle_sparkle_message(data):
-    """Handle messages to Professor Sparkle"""
+    """Handle messages — routes to Multi-Agent System or Professor Sparkle via A/B test."""
     try:
         message = data.get('message', '')
         session_id = data.get('session_id', '')
-        
+        tier = data.get('tier', 'magic_workshop')
+        student_name = data.get('student_name', 'Student')
+
         if not message:
             emit('sparkle_error', {'error': 'No message provided'})
             return
-        
-        print(f"🎭 Sparkle received: {message}")
-        
-        # Get response from Professor Sparkle
-        response = get_sparkle_response(message, session_id)
-        
-        emit('sparkle_response', {
-            'message': response,
-            'timestamp': datetime.now().isoformat()
-        })
-        
-        print(f"✨ Sparkle responded: {response[:100]}...")
-        
+
+        # A/B Test: consistent hash on session_id determines routing
+        use_new_system = (
+            USE_MULTI_AGENT_SYSTEM
+            and (hash(session_id) % 100) < AGENT_SYSTEM_ROLLOUT_PERCENTAGE
+        )
+
+        if use_new_system:
+            print(f"🤖 [Multi-Agent] Routing session {session_id}: {message[:80]}")
+            from agents.api_routes import get_agent_system
+            agent_system = get_agent_system()
+            result = agent_system.process_message_sync(
+                message=message,
+                session_id=session_id,
+                tier=tier,
+                student_name=student_name,
+            )
+            # Emit the result using the standard sparkle_response event
+            # so the existing frontend works without changes
+            emit('sparkle_response', {
+                'message': result.get('response', 'Hmm, let me think about that...'),
+                'timestamp': datetime.now().isoformat(),
+                'agent': result.get('agent', 'tutor'),
+                'intent': result.get('intent', 'TUTOR'),
+                'events': result.get('events', []),
+            })
+            print(f"🤖 [Multi-Agent] Responded via {result.get('agent', 'unknown')} agent")
+        else:
+            print(f"🎭 [Sparkle] Routing session {session_id}: {message[:80]}")
+            response = get_sparkle_response(message, session_id)
+            emit('sparkle_response', {
+                'message': response,
+                'timestamp': datetime.now().isoformat()
+            })
+            print(f"✨ Sparkle responded: {response[:100]}...")
+
     except Exception as e:
-        print(f"❌ Error in Sparkle message: {e}")
+        print(f"❌ Error in message handler: {e}")
         emit('sparkle_error', {'error': str(e)})
 
 # Missing page routes
@@ -301,45 +373,20 @@ if __name__ == '__main__':
     print(f"🚀 Starting Codopia Platform on port {port}")
     print(f"🎭 Professor Sparkle AI: Ready")
     print(f"💾 Database: {'Supabase' if db else 'Fallback'}")
+
+    # --- Initialize Multi-Agent System ---
+    if USE_MULTI_AGENT_SYSTEM:
+        try:
+            agent_system = init_agent_system(socketio=socketio)
+            app.register_blueprint(agent_bp)
+            register_socketio_handlers(socketio)
+            print(f"🤖 Multi-Agent System: ENABLED ({AGENT_SYSTEM_ROLLOUT_PERCENTAGE}% rollout)")
+        except Exception as e:
+            print(f"❌ Multi-Agent System failed to initialize: {e}")
+            print(f"🎭 Falling back to Professor Sparkle only")
+            USE_MULTI_AGENT_SYSTEM = False
+    else:
+        print("🤖 Multi-Agent System: DISABLED")
+
     print(f"🌐 Access at: http://localhost:{port}")
-    
-    socketio.run(app, host='0.0.0.0', port=port, debug=True)
-
-# Signup HTML template
-signup_html = '''
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign Up - Codopia</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="min-h-screen bg-gradient-to-br from-purple-100 via-pink-50 to-blue-100">
-    <div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-        <div class="max-w-md w-full space-y-8">
-            <div>
-                <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
-                    Create your account
-                </h2>
-            </div>
-            <form class="mt-8 space-y-6" method="POST">
-                <div class="space-y-4">
-                    <input name="parent_name" type="text" required class="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm" placeholder="Parent Name">
-                    <input name="email" type="email" required class="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm" placeholder="Email address">
-                    <input name="password" type="password" required class="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm" placeholder="Password">
-                    <input name="child_name" type="text" required class="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm" placeholder="Child's Name">
-                    <input name="child_age" type="number" min="5" max="18" required class="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm" placeholder="Child's Age">
-                </div>
-                <div>
-                    <button type="submit" class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
-                        Create Account
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</body>
-</html>
-'''
-
+    socketio.run(app, host='0.0.0.0', port=port, debug=True, allow_unsafe_werkzeug=True)

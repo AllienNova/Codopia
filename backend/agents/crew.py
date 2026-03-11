@@ -34,14 +34,14 @@ from typing import Optional, Dict, Any, List
 
 from crewai import Agent, Task, Crew, Process
 
-from backend.agents.events import EventBus, AgentEvent, EventType
-from backend.agents.tools.pause_for_input import PauseForInputTool
-from backend.agents.tools.code_sandbox import CodeSandboxTool
-from backend.agents.tools.socratic import SocraticQuestionTool
-from backend.agents.tools.curriculum import CurriculumTool
-from backend.agents.tools.safety_filter import SafetyFilterTool
-from backend.agents.tools.wokwi_simulator import WokwiSimulatorTool
-from backend.agents.prompts import (
+from agents.events import EventBus, AgentEvent, EventType
+from agents.tools.pause_for_input import PauseForInputTool
+from agents.tools.code_sandbox import CodeSandboxTool
+from agents.tools.socratic import SocraticQuestionTool
+from agents.tools.curriculum import CurriculumTool
+from agents.tools.safety_filter import SafetyFilterTool
+from agents.tools.wokwi_simulator import WokwiSimulatorTool
+from agents.prompts import (
     ORCHESTRATOR_BACKSTORY, ORCHESTRATOR_GOAL,
     TUTOR_BACKSTORY, TUTOR_GOAL,
     CODING_AGENT_BACKSTORY, CODING_AGENT_GOAL,
